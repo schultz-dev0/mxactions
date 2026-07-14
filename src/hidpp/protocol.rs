@@ -1,5 +1,7 @@
 //! Minimal HID++ 2.0 wire helpers (short and long reports).
 
+// This is also written by AI. -- Cursor
+
 pub const SHORT_REPORT_ID: u8 = 0x10;
 pub const SHORT_REPORT_LEN: usize = 7;
 
@@ -12,8 +14,10 @@ pub const FEATURE_REPROG_CONTROLS_V4: u16 = 0x1B04;
 /// Haptic Sense Panel control ID on MX Master 4 (Solaar: `unknown:01A0` / Haptic).
 pub const SENSE_PANEL_CID: u16 = 0x01A0;
 
-/// Logitech HID++ raw interface (usage page from CPG / Solaar).
-pub const HIDPP_USAGE_PAGE: u16 = 0xFF43;
+/// Classic Unifying / BT HID++ vendor page (some devices).
+pub const HIDPP_USAGE_PAGE_CLASSIC: u16 = 0xFF43;
+/// Logitech Bolt receiver vendor page (MX Master 4 on C548 uses this).
+pub const HIDPP_USAGE_PAGE_BOLT: u16 = 0xFF00;
 pub const HIDPP_USAGE: u16 = 0x0001;
 
 /// Mapping flags for `setCidReporting` (ReprogControlsV4).
@@ -22,7 +26,14 @@ pub const MAPPING_DIVERTED: u8 = 0x01;
 /// Capability bit in `getCtrlIdInfo` flags: control can be temporarily diverted.
 pub const KEY_FLAG_DIVERTABLE: u16 = 0x0020;
 
+/// Pack function (high nibble) + software id (low nibble) into report byte 3.
+pub fn pack_fn_sw(function: u8, software_id: u8) -> u8 {
+    ((function & 0x0F) << 4) | (software_id & 0x0F)
+}
+
 /// Build a 7-byte short HID++ request/report body (including report ID).
+///
+/// Layout: `[reportId, deviceIndex, featureIndex, fn<<4|swId, p0, p1, p2]`
 pub fn short_request(
     device_index: u8,
     feature_index: u8,
@@ -34,15 +45,16 @@ pub fn short_request(
     buf[0] = SHORT_REPORT_ID;
     buf[1] = device_index;
     buf[2] = feature_index;
-    buf[3] = function;
-    buf[4] = software_id;
-    for (i, b) in params.iter().take(2).enumerate() {
-        buf[5 + i] = *b;
+    buf[3] = pack_fn_sw(function, software_id);
+    for (i, b) in params.iter().take(3).enumerate() {
+        buf[4 + i] = *b;
     }
     buf
 }
 
 /// Build a 20-byte long HID++ request (needed for `setCidReporting` and friends).
+///
+/// Layout: `[reportId, deviceIndex, featureIndex, fn<<4|swId, params…]`
 pub fn long_request(
     device_index: u8,
     feature_index: u8,
@@ -54,10 +66,9 @@ pub fn long_request(
     buf[0] = LONG_REPORT_ID;
     buf[1] = device_index;
     buf[2] = feature_index;
-    buf[3] = function;
-    buf[4] = software_id;
-    for (i, b) in params.iter().take(LONG_REPORT_LEN - 5).enumerate() {
-        buf[5 + i] = *b;
+    buf[3] = pack_fn_sw(function, software_id);
+    for (i, b) in params.iter().take(LONG_REPORT_LEN - 4).enumerate() {
+        buf[4 + i] = *b;
     }
     buf
 }
@@ -86,22 +97,22 @@ impl HidppReport {
 
     pub fn function(&self) -> u8 {
         match self {
-            Self::Short(r) => r[3],
-            Self::Long(r) => r[3],
+            Self::Short(r) => r[3] >> 4,
+            Self::Long(r) => r[3] >> 4,
         }
     }
 
     pub fn software_id(&self) -> u8 {
         match self {
-            Self::Short(r) => r[4],
-            Self::Long(r) => r[4],
+            Self::Short(r) => r[3] & 0x0F,
+            Self::Long(r) => r[3] & 0x0F,
         }
     }
 
     pub fn params(&self) -> &[u8] {
         match self {
-            Self::Short(r) => &r[5..SHORT_REPORT_LEN],
-            Self::Long(r) => &r[5..LONG_REPORT_LEN],
+            Self::Short(r) => &r[4..SHORT_REPORT_LEN],
+            Self::Long(r) => &r[4..LONG_REPORT_LEN],
         }
     }
 }
@@ -210,10 +221,22 @@ mod tests {
     }
 
     #[test]
+    fn pack_fn_sw_and_parse_roundtrip() {
+        // function=1 (ping), software_id=0x0B → byte 0x1B
+        assert_eq!(pack_fn_sw(0x01, 0x0B), 0x1B);
+        let raw = short_request(0x02, 0x00, 0x01, 0x0B, &[0x00]);
+        assert_eq!(raw, [0x10, 0x02, 0x00, 0x1B, 0x00, 0x00, 0x00]);
+        let report = parse_report(&raw).unwrap();
+        assert_eq!(report.function(), 0x01);
+        assert_eq!(report.software_id(), 0x0B);
+        assert_eq!(report.params()[0], 0x00);
+    }
+
+    #[test]
     fn parse_short_report_handles_optional_leading_zero() {
-        let raw = [0x10, 0x02, 0x05, 0x00, 0x5A, 0x01, 0xA0];
+        let raw = [0x10, 0x02, 0x05, 0x1B, 0x01, 0xA0, 0x00];
         assert_eq!(parse_short_report(&raw).unwrap(), raw);
-        let padded = [0x00, 0x10, 0x02, 0x05, 0x00, 0x5A, 0x01, 0xA0];
+        let padded = [0x00, 0x10, 0x02, 0x05, 0x1B, 0x01, 0xA0, 0x00];
         assert_eq!(parse_short_report(&padded).unwrap(), raw);
     }
 

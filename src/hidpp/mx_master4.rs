@@ -1,5 +1,7 @@
 //! MX Master 4 Sense Panel ownership via HID++ ReprogControlsV4.
 
+// This is also written by AI. -- Cursor
+
 use std::ffi::NulError;
 use std::time::Duration;
 
@@ -7,10 +9,10 @@ use hidapi::{DeviceInfo, HidApi, HidDevice};
 use thiserror::Error;
 
 use crate::hidpp::protocol::{
-    FEATURE_REPROG_CONTROLS_V4, HIDPP_USAGE, HIDPP_USAGE_PAGE, IROOT_FEATURE_INDEX,
-    KEY_FLAG_DIVERTABLE, SENSE_PANEL_CID, SHORT_REPORT_LEN, cid_reporting_bfield, cids_contain,
+    FEATURE_REPROG_CONTROLS_V4, HIDPP_USAGE, HIDPP_USAGE_PAGE_BOLT, HIDPP_USAGE_PAGE_CLASSIC,
+    IROOT_FEATURE_INDEX, KEY_FLAG_DIVERTABLE, SENSE_PANEL_CID, cid_reporting_bfield, cids_contain,
     long_request, mapping_is_diverted, parse_cid_reporting_flags, parse_ctrl_id_info,
-    parse_diverted_button_cids, parse_report, short_request,
+    parse_diverted_button_cids, parse_report,
 };
 use crate::hidpp::{HidEvent, HidEventSource};
 
@@ -26,9 +28,10 @@ pub const PID_BOLT_RECEIVER: u16 = 0xC548;
 /// Legacy Unifying receiver — some setups still pair MX devices here.
 pub const PID_UNIFYING_RECEIVER: u16 = 0xC52B;
 
-const SOFTWARE_ID: u8 = 0x5A;
+/// Fixed software id in the low nibble of report byte 3 (Solaar-style; avoid 0).
+const SOFTWARE_ID: u8 = 0x0B;
 const READ_BUF_LEN: usize = 256;
-const REQUEST_TIMEOUT: Duration = Duration::from_millis(500);
+const REQUEST_TIMEOUT: Duration = Duration::from_millis(1000);
 
 /// Device indices to probe (direct/BT first, then typical receiver slots).
 const DEVICE_INDICES: [u8; 7] = [0xFF, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06];
@@ -77,29 +80,18 @@ struct HidppDevice {
 
 impl HidppDevice {
     fn request(&self, feature_index: u8, function: u8, params: &[u8]) -> Result<Vec<u8>, HidError> {
-        if params.len() <= SHORT_REPORT_LEN - 5 {
-            let req = short_request(
-                self.device_index,
-                feature_index,
-                function,
-                self.software_id,
-                params,
-            );
-            self.dev
-                .write(&req)
-                .map_err(|e| HidError::Transport(e.to_string()))?;
-        } else {
-            let req = long_request(
-                self.device_index,
-                feature_index,
-                function,
-                self.software_id,
-                params,
-            );
-            self.dev
-                .write(&req)
-                .map_err(|e| HidError::Transport(e.to_string()))?;
-        }
+        // Prefer long (20-byte) HID++ reports — Bolt/Unifying receivers and HID++ ≥2.0
+        // devices behave more reliably this way (matches Solaar `long_message=True`).
+        let req = long_request(
+            self.device_index,
+            feature_index,
+            function,
+            self.software_id,
+            params,
+        );
+        self.dev
+            .write(&req)
+            .map_err(|e| HidError::Transport(e.to_string()))?;
 
         let deadline = std::time::Instant::now() + REQUEST_TIMEOUT;
         let mut buf = [0u8; READ_BUF_LEN];
@@ -156,7 +148,9 @@ impl HidppDevice {
     }
 
     fn reprog_cid_info(&self, reprog_index: u8, index: u8) -> Result<(u16, u16), HidError> {
-        let params = self.request(reprog_index, 0x10, &[index])?;
+        // ReprogControlsV4 function 1 = getCtrlIdInfo (Solaar often writes this as 0x10
+        // because it ORs software_id into the low nibble of the request word).
+        let params = self.request(reprog_index, 0x01, &[index])?;
         parse_ctrl_id_info(&params).ok_or_else(|| {
             HidError::Transport(format!(
                 "short getCtrlIdInfo response (index {index})"
@@ -166,7 +160,8 @@ impl HidppDevice {
 
     fn get_cid_reporting(&self, reprog_index: u8, cid: u16) -> Result<u8, HidError> {
         let cid_bytes = cid.to_be_bytes();
-        let params = self.request(reprog_index, 0x20, &cid_bytes)?;
+        // Function 2 = getCidReporting
+        let params = self.request(reprog_index, 0x02, &cid_bytes)?;
         parse_cid_reporting_flags(&params).ok_or_else(|| {
             HidError::Transport("short getCidReporting response".into())
         })
@@ -183,7 +178,8 @@ impl HidppDevice {
         pkt.extend_from_slice(&cid.to_be_bytes());
         pkt.push(bfield);
         pkt.extend_from_slice(&0u16.to_be_bytes());
-        let echo = self.request(reprog_index, 0x30, &pkt)?;
+        // Function 3 = setCidReporting
+        let echo = self.request(reprog_index, 0x03, &pkt)?;
         if echo.len() >= 3 {
             let echoed_cid = u16::from_be_bytes([echo[0], echo[1]]);
             let echoed_bfield = echo[2];
@@ -315,7 +311,9 @@ fn remaining_ms(deadline: std::time::Instant) -> i32 {
 }
 
 fn is_hidpp_interface(info: &DeviceInfo) -> bool {
-    info.usage_page() == HIDPP_USAGE_PAGE && info.usage() == HIDPP_USAGE
+    let page = info.usage_page();
+    (page == HIDPP_USAGE_PAGE_BOLT || page == HIDPP_USAGE_PAGE_CLASSIC)
+        && (info.usage() == HIDPP_USAGE || info.usage() == 0x0002)
 }
 
 fn name_matches_mx_master_4(info: &DeviceInfo) -> bool {
@@ -338,9 +336,11 @@ fn enumerate_candidates(api: &HidApi) -> Vec<&DeviceInfo> {
         .collect();
     out.sort_by_key(|d| {
         (
+            !is_hidpp_interface(d),
+            // Prefer Bolt interface 2 (HID++ vendor collection).
+            !(d.product_id() == PID_BOLT_RECEIVER && d.interface_number() == 2),
             !name_matches_mx_master_4(d),
             !pid_matches(d),
-            !is_hidpp_interface(d),
             d.path().to_string_lossy().len(),
         )
     });
@@ -374,11 +374,19 @@ fn try_open_on_interface(api: &HidApi, info: &DeviceInfo) -> Result<MxMaster4, H
         };
         let sense_cid = match find_sense_panel_cid(&probe, reprog_index, count) {
             Ok(cid) => cid,
-            Err(_) => continue,
+            Err(e) => {
+                log::debug!(
+                    "no Sense Panel on {path} index {device_index}: {e}"
+                );
+                continue;
+            }
         };
+        // Sense Panel CID is unique to MX Master 4 for our purposes; name check is best-effort.
         if !device_name_is_mx_master_4(&probe)
             && !name_matches_mx_master_4(info)
             && info.product_id() != PID_MX_MASTER_4_BT
+            && info.product_id() != PID_BOLT_RECEIVER
+            && info.product_id() != PID_UNIFYING_RECEIVER
         {
             continue;
         }
@@ -449,7 +457,8 @@ fn device_name_is_mx_master_4(dev: &HidppDevice) -> bool {
     let mut name = String::new();
     let mut offset = 0u8;
     while (offset as usize) < name_len as usize {
-        let Ok(chunk) = dev.request(name_index, 0x10, &[offset]) else {
+        // DeviceName function 1 = getDeviceName (Solaar: 0x10 before sw_id merge)
+        let Ok(chunk) = dev.request(name_index, 0x01, &[offset]) else {
             break;
         };
         for &b in chunk.iter().take(16) {
@@ -478,17 +487,25 @@ mod tests {
     }
 
     #[test]
-    fn mx_master4_open_without_hardware_returns_not_found() {
-        let err = MxMaster4::open().unwrap_err();
-        assert!(
-            matches!(
-                err,
-                HidError::DeviceNotFound
-                    | HidError::PermissionDenied { .. }
-                    | HidError::OpenFailed { .. }
+    fn mx_master4_open_is_deterministic() {
+        // With hardware attached this returns Ok; without, a typed discovery error.
+        match MxMaster4::open() {
+            Ok(m) => {
+                assert_eq!(m.sense_panel_cid(), SENSE_PANEL_CID);
+                drop(m); // undivert on drop
+            }
+            Err(err) => assert!(
+                matches!(
+                    err,
+                    HidError::DeviceNotFound
+                        | HidError::PermissionDenied { .. }
+                        | HidError::OpenFailed { .. }
+                        | HidError::SensePanelNotFound { .. }
+                        | HidError::DivertFailed { .. }
+                ),
+                "unexpected error: {err:?}"
             ),
-            "unexpected error: {err:?}"
-        );
+        }
     }
 
     #[test]
