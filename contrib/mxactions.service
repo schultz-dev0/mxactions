@@ -1,0 +1,11 @@
+[Unit]
+Description=mxactions — MX Master 4 Actions Ring
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/mxactions
+Restart=on-failure
+
+[Install]
+WantedBy=graphical-session.target

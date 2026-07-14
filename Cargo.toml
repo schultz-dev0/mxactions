@@ -2,5 +2,29 @@
 name = "mxactions"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+description = "Wayland Actions Ring for the Logitech MX Master 4 Haptic Sense Panel"
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+dirs = "6"
+hidapi = "2"
+log = "0.4"
+env_logger = "0.11"
+iced = { version = "0.14", default-features = false, features = ["canvas", "wgpu", "tokio", "smol", "wayland"] }
+iced_layershell = "0.18"
+wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[[example]]
+name = "overlay_preview"
+required-features = []
+
+[[example]]
+name = "hid_test"
+required-features = []

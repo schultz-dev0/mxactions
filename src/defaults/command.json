@@ -1,0 +1,24 @@
+{
+  "ui": {
+    "bubble_count_max": 8,
+    "ring_radius": 120
+  },
+  "rings": [
+    {
+      "match": ["*"],
+      "title": "Desktop",
+      "actions": [
+        { "label": "Launcher", "command": "true" }
+      ]
+    },
+    {
+      "match": ["code", "code-oss", "cursor", "codium", "vscodium"],
+      "title": "VS Code",
+      "actions": [
+        { "label": "Command", "command": "key:ctrl+shift+p" },
+        { "label": "Terminal", "command": "key:ctrl+`" },
+        { "label": "Format", "command": "key:shift+alt+f" }
+      ]
+    }
+  ]
+}
