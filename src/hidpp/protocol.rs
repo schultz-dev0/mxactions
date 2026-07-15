@@ -31,27 +31,6 @@ pub fn pack_fn_sw(function: u8, software_id: u8) -> u8 {
     ((function & 0x0F) << 4) | (software_id & 0x0F)
 }
 
-/// Build a 7-byte short HID++ request/report body (including report ID).
-///
-/// Layout: `[reportId, deviceIndex, featureIndex, fn<<4|swId, p0, p1, p2]`
-pub fn short_request(
-    device_index: u8,
-    feature_index: u8,
-    function: u8,
-    software_id: u8,
-    params: &[u8],
-) -> [u8; SHORT_REPORT_LEN] {
-    let mut buf = [0u8; SHORT_REPORT_LEN];
-    buf[0] = SHORT_REPORT_ID;
-    buf[1] = device_index;
-    buf[2] = feature_index;
-    buf[3] = pack_fn_sw(function, software_id);
-    for (i, b) in params.iter().take(3).enumerate() {
-        buf[4 + i] = *b;
-    }
-    buf
-}
-
 /// Build a 20-byte long HID++ request (needed for `setCidReporting` and friends).
 ///
 /// Layout: `[reportId, deviceIndex, featureIndex, fn<<4|swId, params…]`
@@ -164,7 +143,7 @@ pub fn parse_diverted_button_cids(params: &[u8]) -> [u16; 4] {
 
 /// Returns `true` when `target` appears in the four CID slots (0 = unused).
 pub fn cids_contain(cids: &[u16; 4], target: u16) -> bool {
-    cids.iter().any(|&c| c == target)
+    cids.contains(&target)
 }
 
 /// Compute the `bfield` byte for `setCidReporting` (Solaar-compatible).
@@ -224,8 +203,8 @@ mod tests {
     fn pack_fn_sw_and_parse_roundtrip() {
         // function=1 (ping), software_id=0x0B → byte 0x1B
         assert_eq!(pack_fn_sw(0x01, 0x0B), 0x1B);
-        let raw = short_request(0x02, 0x00, 0x01, 0x0B, &[0x00]);
-        assert_eq!(raw, [0x10, 0x02, 0x00, 0x1B, 0x00, 0x00, 0x00]);
+        let raw = long_request(0x02, 0x00, 0x01, 0x0B, &[0x00]);
+        assert_eq!(raw[..4], [0x11, 0x02, 0x00, 0x1B]);
         let report = parse_report(&raw).unwrap();
         assert_eq!(report.function(), 0x01);
         assert_eq!(report.software_id(), 0x0B);

@@ -6,9 +6,7 @@ pub fn query_pointer_position() -> Option<(i32, i32)> {
 }
 
 fn hyprland_cursor() -> Option<(i32, i32)> {
-    if std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE").is_none() {
-        return None;
-    }
+    std::env::var_os("HYPRLAND_INSTANCE_SIGNATURE")?;
     let out = std::process::Command::new("hyprctl")
         .args(["cursorpos"])
         .output()

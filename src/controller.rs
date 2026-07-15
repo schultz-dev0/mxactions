@@ -32,6 +32,12 @@ pub struct Controller {
     actions: Vec<String>,
 }
 
+impl Default for Controller {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Controller {
     pub fn new() -> Self {
         Self {
