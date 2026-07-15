@@ -12,15 +12,12 @@ pub struct Config {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UiSettings {
-    #[serde(default = "default_bubble_max")]
-    pub bubble_count_max: usize,
     #[serde(default = "default_radius")]
     pub ring_radius: f32,
+    #[serde(default)]
+    pub trigger: TriggerMode,
 }
 
-fn default_bubble_max() -> usize {
-    8
-}
 fn default_radius() -> f32 {
     120.0
 }
@@ -28,9 +25,25 @@ fn default_radius() -> f32 {
 impl Default for UiSettings {
     fn default() -> Self {
         Self {
-            bubble_count_max: default_bubble_max(),
             ring_radius: default_radius(),
+            trigger: TriggerMode::default(),
         }
+    }
+}
+
+/// How the Sense Panel opens and confirms a selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TriggerMode {
+    /// Press opens the ring, release over a bubble fires it (v1 behavior).
+    Hold,
+    /// A completed tap opens the ring; a second tap fires or cancels.
+    Tap,
+}
+
+impl Default for TriggerMode {
+    fn default() -> Self {
+        TriggerMode::Hold
     }
 }
 
@@ -45,6 +58,10 @@ pub struct Ring {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RingAction {
     pub label: String,
+    /// Nerd Font glyph shown in the bubble; falls back to the first character
+    /// of `label` at render time when omitted.
+    #[serde(default)]
+    pub icon: Option<String>,
     pub command: String,
 }
 
@@ -100,7 +117,7 @@ mod tests {
     fn sample() -> Config {
         parse_config_str(
             r#"{
-          "ui": { "bubble_count_max": 8, "ring_radius": 120 },
+          "ui": { "ring_radius": 120 },
           "rings": [
             {
               "match": ["*"],
@@ -110,7 +127,7 @@ mod tests {
             {
               "match": ["code", "cursor"],
               "title": "VS Code",
-              "actions": [{ "label": "Command", "command": "key:ctrl+shift+p" }]
+              "actions": [{ "label": "Command", "icon": "\uf11c", "command": "key:ctrl+shift+p" }]
             }
           ]
         }"#,
@@ -121,14 +138,8 @@ mod tests {
     #[test]
     fn matches_vscode_family() {
         let c = sample();
-        assert_eq!(
-            select_ring(&c, Some("cursor")).unwrap().title,
-            "VS Code"
-        );
-        assert_eq!(
-            select_ring(&c, Some("firefox")).unwrap().title,
-            "Desktop"
-        );
+        assert_eq!(select_ring(&c, Some("cursor")).unwrap().title, "VS Code");
+        assert_eq!(select_ring(&c, Some("firefox")).unwrap().title, "Desktop");
         assert_eq!(select_ring(&c, None).unwrap().title, "Desktop");
     }
 
@@ -139,5 +150,39 @@ mod tests {
         let cfg = load_or_init(&path).unwrap();
         assert!(path.exists());
         assert!(!cfg.rings.is_empty());
+    }
+
+    #[test]
+    fn trigger_defaults_to_hold_when_absent() {
+        let c = sample();
+        assert_eq!(c.ui.trigger, TriggerMode::Hold);
+    }
+
+    #[test]
+    fn trigger_tap_parses() {
+        let c = parse_config_str(
+            r#"{ "ui": { "trigger": "tap" }, "rings": [] }"#,
+        )
+        .unwrap();
+        assert_eq!(c.ui.trigger, TriggerMode::Tap);
+    }
+
+    #[test]
+    fn icon_is_optional_and_falls_back_to_none() {
+        let c = sample();
+        let desktop = select_ring(&c, None).unwrap();
+        assert_eq!(desktop.actions[0].icon, None);
+        let vscode = select_ring(&c, Some("cursor")).unwrap();
+        assert_eq!(vscode.actions[0].icon.as_deref(), Some("\u{f11c}"));
+    }
+
+    #[test]
+    fn stray_bubble_count_max_key_is_ignored_for_backward_compat() {
+        // Old configs written by the v1 build still have this key; it must not fail parsing.
+        let c = parse_config_str(
+            r#"{ "ui": { "bubble_count_max": 8, "ring_radius": 120 }, "rings": [] }"#,
+        )
+        .unwrap();
+        assert_eq!(c.ui.ring_radius, 120.0);
     }
 }

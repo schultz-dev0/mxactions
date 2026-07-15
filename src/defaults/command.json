@@ -1,23 +1,47 @@
 {
   "ui": {
-    "bubble_count_max": 8,
-    "ring_radius": 120
+    "ring_radius": 120,
+    "trigger": "hold"
   },
   "rings": [
     {
-      "match": ["*"],
+      "match": [
+        "*"
+      ],
       "title": "Desktop",
       "actions": [
-        { "label": "Launcher", "command": "true" }
+        {
+          "label": "Launcher",
+          "icon": "\uf0c9",
+          "command": "true"
+        }
       ]
     },
     {
-      "match": ["code", "code-oss", "cursor", "codium", "vscodium"],
+      "match": [
+        "code",
+        "code-oss",
+        "cursor",
+        "codium",
+        "vscodium"
+      ],
       "title": "VS Code",
       "actions": [
-        { "label": "Command", "command": "key:ctrl+shift+p" },
-        { "label": "Terminal", "command": "key:ctrl+`" },
-        { "label": "Format", "command": "key:shift+alt+f" }
+        {
+          "label": "Command",
+          "icon": "\uf11c",
+          "command": "key:ctrl+shift+p"
+        },
+        {
+          "label": "Terminal",
+          "icon": "\uf120",
+          "command": "key:ctrl+`"
+        },
+        {
+          "label": "Format",
+          "icon": "\uf031",
+          "command": "key:shift+alt+f"
+        }
       ]
     }
   ]
