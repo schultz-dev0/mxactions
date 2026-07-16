@@ -1,7 +1,5 @@
 //! MX Master 4 Sense Panel ownership via HID++ ReprogControlsV4.
 
-// This is also written by AI. -- Cursor
-
 use std::ffi::NulError;
 use std::time::Duration;
 
@@ -152,9 +150,7 @@ impl HidppDevice {
         // because it ORs software_id into the low nibble of the request word).
         let params = self.request(reprog_index, 0x01, &[index])?;
         parse_ctrl_id_info(&params).ok_or_else(|| {
-            HidError::Transport(format!(
-                "short getCtrlIdInfo response (index {index})"
-            ))
+            HidError::Transport(format!("short getCtrlIdInfo response (index {index})"))
         })
     }
 
@@ -162,17 +158,11 @@ impl HidppDevice {
         let cid_bytes = cid.to_be_bytes();
         // Function 2 = getCidReporting
         let params = self.request(reprog_index, 0x02, &cid_bytes)?;
-        parse_cid_reporting_flags(&params).ok_or_else(|| {
-            HidError::Transport("short getCidReporting response".into())
-        })
+        parse_cid_reporting_flags(&params)
+            .ok_or_else(|| HidError::Transport("short getCidReporting response".into()))
     }
 
-    fn set_cid_diverted(
-        &self,
-        reprog_index: u8,
-        cid: u16,
-        diverted: bool,
-    ) -> Result<(), HidError> {
+    fn set_cid_diverted(&self, reprog_index: u8, cid: u16, diverted: bool) -> Result<(), HidError> {
         let bfield = cid_reporting_bfield(diverted);
         let mut pkt = Vec::with_capacity(5);
         pkt.extend_from_slice(&cid.to_be_bytes());
@@ -350,15 +340,11 @@ fn enumerate_candidates(api: &HidApi) -> Vec<&DeviceInfo> {
 fn try_open_on_interface(api: &HidApi, info: &DeviceInfo) -> Result<MxMaster4, HidError> {
     let path = info.path().to_string_lossy().into_owned();
     // Validate we can open once before probing indices.
-    let _ = api
-        .open_path(info.path())
-        .map_err(|e| open_err(&path, e))?;
+    let _ = api.open_path(info.path()).map_err(|e| open_err(&path, e))?;
 
     for &device_index in &DEVICE_INDICES {
         let probe = HidppDevice {
-            dev: api
-                .open_path(info.path())
-                .map_err(|e| open_err(&path, e))?,
+            dev: api.open_path(info.path()).map_err(|e| open_err(&path, e))?,
             device_index,
             reprog_index: 0,
             software_id: SOFTWARE_ID,
@@ -375,9 +361,7 @@ fn try_open_on_interface(api: &HidApi, info: &DeviceInfo) -> Result<MxMaster4, H
         let sense_cid = match find_sense_panel_cid(&probe, reprog_index, count) {
             Ok(cid) => cid,
             Err(e) => {
-                log::debug!(
-                    "no Sense Panel on {path} index {device_index}: {e}"
-                );
+                log::debug!("no Sense Panel on {path} index {device_index}: {e}");
                 continue;
             }
         };
@@ -425,11 +409,7 @@ fn open_err(path: &str, source: hidapi::HidError) -> HidError {
     }
 }
 
-fn find_sense_panel_cid(
-    dev: &HidppDevice,
-    reprog_index: u8,
-    count: u8,
-) -> Result<u16, HidError> {
+fn find_sense_panel_cid(dev: &HidppDevice, reprog_index: u8, count: u8) -> Result<u16, HidError> {
     for index in 0..count {
         let Ok((cid, flags)) = dev.reprog_cid_info(reprog_index, index) else {
             continue;

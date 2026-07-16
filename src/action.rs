@@ -54,11 +54,9 @@ pub struct YdotoolInjector;
 impl InputInjector for YdotoolInjector {
     fn key_chord(&mut self, chord: &str) -> Result<(), ActionError> {
         let key = chord.replace('-', "+");
-        std::process::Command::new("ydotool")
-            .args(["key", &key])
-            .spawn()
-            .map_err(|e| ActionError::Io(e.to_string()))?;
-        Ok(())
+        let mut command = std::process::Command::new("ydotool");
+        command.args(["key", &key]);
+        spawn_reaped(command)
     }
 
     fn click(&mut self, button: ClickButton) -> Result<(), ActionError> {
@@ -67,11 +65,9 @@ impl InputInjector for YdotoolInjector {
             ClickButton::Right => "0xC1",
             ClickButton::Middle => "0xC2",
         };
-        std::process::Command::new("ydotool")
-            .args(["click", code])
-            .spawn()
-            .map_err(|e| ActionError::Io(e.to_string()))?;
-        Ok(())
+        let mut command = std::process::Command::new("ydotool");
+        command.args(["click", code]);
+        spawn_reaped(command)
     }
 }
 
@@ -85,15 +81,30 @@ impl<I: InputInjector> ActionRunner<I> {
             Action::Keys(chord) => self.injector.key_chord(&chord),
             Action::Click(button) => self.injector.click(button),
             Action::Shell(cmd) => {
-                std::process::Command::new("sh")
-                    .arg("-c")
-                    .arg(&cmd)
-                    .spawn()
-                    .map_err(|e| ActionError::Io(e.to_string()))?;
-                Ok(())
+                let mut command = std::process::Command::new("sh");
+                command.arg("-c").arg(&cmd);
+                spawn_reaped(command)
             }
         }
     }
+}
+
+fn spawn_reaped(mut command: std::process::Command) -> Result<(), ActionError> {
+    let mut child = command
+        .spawn()
+        .map_err(|e| ActionError::Io(e.to_string()))?;
+
+    // Rust does not wait when Child is dropped. Reap asynchronously so frequent
+    // actions cannot leave zombies behind while keeping dispatch non-blocking.
+    std::thread::Builder::new()
+        .name("mxactions-child-reaper".into())
+        .spawn(move || {
+            if let Err(error) = child.wait() {
+                log::debug!("failed to reap action process: {error}");
+            }
+        })
+        .map_err(|e| ActionError::Io(e.to_string()))?;
+    Ok(())
 }
 
 pub fn parse_command(raw: &str) -> Result<Action, ActionError> {
@@ -102,7 +113,11 @@ pub fn parse_command(raw: &str) -> Result<Action, ActionError> {
         return Err(ActionError::Empty);
     }
     if let Some(rest) = s.strip_prefix("key:") {
-        return Ok(Action::Keys(rest.to_string()));
+        let chord = rest.trim();
+        if chord.is_empty() {
+            return Err(ActionError::Empty);
+        }
+        return Ok(Action::Keys(chord.to_string()));
     }
     if let Some(rest) = s.strip_prefix("click:") {
         let btn = match rest.trim() {
@@ -130,7 +145,10 @@ mod tests {
             parse_command("click:left").unwrap(),
             Action::Click(ClickButton::Left)
         );
-        assert_eq!(parse_command("walker").unwrap(), Action::Shell("walker".into()));
+        assert_eq!(
+            parse_command("walker").unwrap(),
+            Action::Shell("walker".into())
+        );
     }
 
     #[test]
@@ -140,6 +158,11 @@ mod tests {
         };
         runner.run("key:ctrl+p").unwrap();
         assert_eq!(runner.injector.keys, vec!["ctrl+p"]);
+    }
+
+    #[test]
+    fn rejects_empty_key_chord() {
+        assert_eq!(parse_command("key:   "), Err(ActionError::Empty));
     }
 
     #[test]

@@ -6,6 +6,7 @@ pub enum RingCommand {
     Show {
         title: String,
         labels: Vec<String>,
+        icons: Vec<Option<String>>,
         layout: RingLayout,
         /// Screen coordinates for ring center (set when pointer position is known).
         cursor: (i32, i32),
@@ -25,8 +26,6 @@ pub enum ControllerEvent {
 pub struct Controller {
     open: bool,
     layout: Option<RingLayout>,
-    labels: Vec<String>,
-    title: String,
     hover: Option<usize>,
     /// Actions frozen at open for commit.
     actions: Vec<String>,
@@ -43,11 +42,14 @@ impl Controller {
         Self {
             open: false,
             layout: None,
-            labels: vec![],
-            title: String::new(),
             hover: None,
             actions: vec![],
         }
+    }
+
+    /// Tap dispatch needs this to distinguish opening from confirming a selection.
+    pub fn is_open(&self) -> bool {
+        self.open
     }
 
     pub fn handle(
@@ -65,20 +67,19 @@ impl Controller {
                     return (cmds, None);
                 }
                 let ring = crate::config::select_ring(config, app_id);
-                let (title, labels, actions) = match ring {
-                    Some(r) => Self::from_ring(r, config.ui.bubble_count_max),
-                    None => ("?".into(), vec![], vec![]),
+                let (title, labels, icons, actions) = match ring {
+                    Some(r) => Self::from_ring(r),
+                    None => ("?".into(), vec![], vec![], vec![]),
                 };
                 let layout = RingLayout::new(labels.len(), config.ui.ring_radius);
                 self.open = true;
-                self.title = title.clone();
-                self.labels = labels.clone();
                 self.actions = actions;
                 self.layout = Some(layout.clone());
                 self.hover = None;
                 cmds.push(RingCommand::Show {
                     title,
                     labels,
+                    icons,
                     layout,
                     cursor,
                 });
@@ -113,11 +114,11 @@ impl Controller {
         (cmds, fire)
     }
 
-    fn from_ring(ring: &Ring, max: usize) -> (String, Vec<String>, Vec<String>) {
-        let take = ring.actions.len().min(max);
-        let labels = ring.actions[..take].iter().map(|a| a.label.clone()).collect();
-        let actions = ring.actions[..take].iter().map(|a| a.command.clone()).collect();
-        (ring.title.clone(), labels, actions)
+    fn from_ring(ring: &Ring) -> (String, Vec<String>, Vec<Option<String>>, Vec<String>) {
+        let labels = ring.actions.iter().map(|a| a.label.clone()).collect();
+        let icons = ring.actions.iter().map(|a| a.icon.clone()).collect();
+        let actions = ring.actions.iter().map(|a| a.command.clone()).collect();
+        (ring.title.clone(), labels, icons, actions)
     }
 }
 
@@ -134,8 +135,11 @@ mod tests {
     fn press_release_on_bubble_fires() {
         let mut c = Controller::new();
         let config = cfg();
-        let (cmds, fire) =
-            c.handle(ControllerEvent::Press { cursor: (0, 0) }, &config, Some("cursor"));
+        let (cmds, fire) = c.handle(
+            ControllerEvent::Press { cursor: (0, 0) },
+            &config,
+            Some("cursor"),
+        );
         assert!(matches!(cmds[0], RingCommand::Show { cursor: (0, 0), .. }));
         assert!(fire.is_none());
 
@@ -144,7 +148,11 @@ mod tests {
             _ => panic!(),
         };
         let (bx, by) = layout.bubbles[0];
-        let (_cmds, _) = c.handle(ControllerEvent::Pointer { x: bx, y: by }, &config, Some("cursor"));
+        let (_cmds, _) = c.handle(
+            ControllerEvent::Pointer { x: bx, y: by },
+            &config,
+            Some("cursor"),
+        );
         let (cmds, fire) = c.handle(ControllerEvent::Release, &config, Some("cursor"));
         assert_eq!(cmds, vec![RingCommand::Hide]);
         assert_eq!(fire.as_deref(), Some("key:ctrl+shift+p"));
@@ -155,8 +163,29 @@ mod tests {
         let mut c = Controller::new();
         let config = cfg();
         c.handle(ControllerEvent::Press { cursor: (0, 0) }, &config, None);
-        c.handle(ControllerEvent::Pointer { x: 999.0, y: 999.0 }, &config, None);
+        c.handle(
+            ControllerEvent::Pointer { x: 999.0, y: 999.0 },
+            &config,
+            None,
+        );
         let (_, fire) = c.handle(ControllerEvent::Release, &config, None);
         assert!(fire.is_none());
+    }
+
+    #[test]
+    fn icons_flow_through_to_show_command() {
+        let mut c = Controller::new();
+        let config = cfg();
+        let (cmds, _) = c.handle(
+            ControllerEvent::Press { cursor: (0, 0) },
+            &config,
+            Some("cursor"),
+        );
+        let icons = match &cmds[0] {
+            RingCommand::Show { icons, .. } => icons.clone(),
+            _ => panic!("expected Show"),
+        };
+        // Default VS Code ring's first action ("Command") ships an icon in defaults/command.json.
+        assert!(icons[0].is_some());
     }
 }

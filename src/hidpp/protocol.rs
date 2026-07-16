@@ -1,7 +1,5 @@
 //! Minimal HID++ 2.0 wire helpers (short and long reports).
 
-// This is also written by AI. -- Cursor
-
 pub const SHORT_REPORT_ID: u8 = 0x10;
 pub const SHORT_REPORT_LEN: usize = 7;
 
@@ -113,7 +111,11 @@ pub fn parse_report(data: &[u8]) -> Option<HidppReport> {
 }
 
 fn skip_leading_zero(data: &[u8]) -> &[u8] {
-    if data.first() == Some(&0) && data.get(1).is_some_and(|b| *b == SHORT_REPORT_ID || *b == LONG_REPORT_ID) {
+    if data.first() == Some(&0)
+        && data
+            .get(1)
+            .is_some_and(|b| *b == SHORT_REPORT_ID || *b == LONG_REPORT_ID)
+    {
         &data[1..]
     } else {
         data
@@ -242,7 +244,9 @@ mod tests {
         // CID=0x01A0, mapping_flags=0x03 (diverted), mapped_to=0
         let params = [0x01, 0xA0, 0x03, 0x00, 0x00];
         assert_eq!(parse_cid_reporting_flags(&params), Some(0x03));
-        assert!(mapping_is_diverted(parse_cid_reporting_flags(&params).unwrap()));
+        assert!(mapping_is_diverted(
+            parse_cid_reporting_flags(&params).unwrap()
+        ));
     }
 
     #[test]

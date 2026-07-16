@@ -16,16 +16,14 @@ mod wayland_impl {
 
     use wayland_client::backend::ObjectId;
     use wayland_client::{
-        event_created_child, globals::registry_queue_init, protocol::wl_registry, Connection,
-        Dispatch, EventQueue, Proxy, QueueHandle,
+        Connection, Dispatch, EventQueue, Proxy, QueueHandle, event_created_child,
+        globals::registry_queue_init, protocol::wl_registry,
     };
     use wayland_protocols_wlr::foreign_toplevel::v1::client::{
         zwlr_foreign_toplevel_handle_v1::{
             Event as HandleEvent, State as HandleState, ZwlrForeignToplevelHandleV1,
         },
-        zwlr_foreign_toplevel_manager_v1::{
-            Event as ManagerEvent, ZwlrForeignToplevelManagerV1,
-        },
+        zwlr_foreign_toplevel_manager_v1::{Event as ManagerEvent, ZwlrForeignToplevelManagerV1},
     };
 
     #[derive(Debug, Default)]
@@ -124,9 +122,7 @@ mod wayland_impl {
                 .bind::<ZwlrForeignToplevelManagerV1, _, _>(&queue.handle(), 1..=3, ())
                 .is_err()
             {
-                log::debug!(
-                    "zwlr_foreign_toplevel_manager_v1 not advertised by compositor"
-                );
+                log::debug!("zwlr_foreign_toplevel_manager_v1 not advertised by compositor");
                 return false;
             }
 
@@ -178,10 +174,7 @@ mod wayland_impl {
             _: &QueueHandle<Self>,
         ) {
             if let ManagerEvent::Toplevel { toplevel } = event {
-                state
-                    .app_ids
-                    .entry(toplevel.id())
-                    .or_default();
+                state.app_ids.entry(toplevel.id()).or_default();
             }
         }
 
@@ -209,7 +202,9 @@ mod wayland_impl {
                     }
                     state.app_ids.remove(&handle.id());
                 }
-                HandleEvent::State { state: handle_state } => {
+                HandleEvent::State {
+                    state: handle_state,
+                } => {
                     let activated = handle_state.contains(&(HandleState::Activated as u8));
                     if activated {
                         state.active = Some(handle.id());

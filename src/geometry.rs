@@ -14,8 +14,9 @@ pub struct RingLayout {
 
 /// Hub is a small fixed-ratio marker dot — it does not grow with action count.
 const HUB_RADIUS_RATIO: f32 = 0.12;
-/// v1's bubble size; kept as the ceiling so small rings look unchanged.
-const BUBBLE_RADIUS_RATIO: f32 = 0.28;
+/// The reference UI leaves enough negative space for each action to read as a
+/// distinct control instead of a continuous wheel.
+const BUBBLE_RADIUS_RATIO: f32 = 0.23;
 
 impl RingLayout {
     pub fn new(action_count: usize, ring_radius: f32) -> Self {
@@ -42,7 +43,11 @@ impl RingLayout {
                 })
                 .collect()
         };
-        Self { hub_radius, bubble_radius, bubbles }
+        Self {
+            hub_radius,
+            bubble_radius,
+            bubbles,
+        }
     }
 }
 
@@ -91,10 +96,8 @@ mod tests {
     }
 
     #[test]
-    fn small_counts_keep_the_v1_bubble_size() {
-        // At counts the old bubble_count_max=8 default already handled comfortably,
-        // sizing must be unchanged from the v1 constant (0.28 * ring_radius).
+    fn small_counts_use_reference_bubble_size() {
         let layout = RingLayout::new(3, 120.0);
-        assert!((layout.bubble_radius - 120.0 * 0.28).abs() < 0.001);
+        assert!((layout.bubble_radius - 120.0 * 0.23).abs() < 0.001);
     }
 }

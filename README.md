@@ -9,6 +9,7 @@ Wayland daemon that diverts the Logitech **MX Master 4** Haptic Sense Panel and 
 - MX Master 4 connected via Bluetooth or Bolt receiver
 - wlroots-based compositor (Hyprland, Sway, River, etc.) for layer-shell overlay and focus tracking
 - [`ydotool`](https://github.com/ReimuNotMoe/ydotool) + `ydotoold` for `key:` and `click:` actions
+- `ttf-nerd-fonts-symbols` (Arch) or equivalent Nerd Font package for icon glyphs in bubbles (an action with no `icon` set falls back to the first letter of its label; an `icon` set without the font installed renders as a blank/tofu glyph rather than falling back)
 - udev permissions to open the mouse HID++ interface (see below)
 
 ## Solaar / OpenLogi conflict
@@ -25,17 +26,20 @@ On first run, mxactions creates the directory and writes bundled defaults (Deskt
 
 ```json
 {
-  "ui": { "bubble_count_max": 8, "ring_radius": 120 },
+  "ui": { "ring_radius": 120, "trigger": "hold" },
   "rings": [
     {
       "match": ["*"],
       "title": "Desktop",
-      "actions": [{ "label": "Launcher", "command": "walker" }]
+      "actions": [{ "label": "Launcher", "icon": "", "command": "walker" }]
     },
     {
       "match": ["code", "cursor"],
       "title": "VS Code",
-      "actions": [{ "label": "Command", "command": "key:ctrl+shift+p" }]
+      "actions": [
+        { "label": "Command", "icon": "", "command": "key:ctrl+shift+p" },
+        { "label": "Terminal", "icon": "", "command": "key:ctrl+`" }
+      ]
     }
   ]
 }
@@ -51,7 +55,22 @@ On first run, mxactions creates the directory and writes bundled defaults (Deskt
 
 **Matching:** first ring whose `match` list contains the focused app-id; `*` is the fallback. Focus uses `zwlr_foreign_toplevel_manager_v1` when available.
 
-**Reload:** config is read at **startup only**. After editing, restart mxactions.
+**Reload:** `command.json` is re-read automatically within about a second of being edited; an invalid edit is logged and ignored, so the daemon keeps running on the last-good config.
+
+### Trigger mode
+
+- **`"trigger": "hold"` (default)** — press and hold the Haptic Sense Panel to open the ring, move to a bubble, and release to fire the action. Release over the hub or empty space cancels.
+- **`"trigger": "tap"`** — the first completed tap opens the ring. A second tap over a bubble fires it, or over the hub/empty space cancels the ring. Left click remains unused (reserved for future expansion).
+
+### Blur (optional, Hyprland)
+
+The ring itself draws translucent flat circles. On Hyprland, you can layer real backdrop blur behind the ring with a layer rule targeting the ring's layer-shell namespace:
+
+```
+layerrule = blur, mxactions-ring
+```
+
+Add this to your Hyprland config (e.g., `~/.config/hypr/hyprland.conf`). Other compositors get the flat-translucent look by default with no additional config.
 
 ## Build and install
 
@@ -70,12 +89,6 @@ RUST_LOG=info mxactions
 install -Dm644 contrib/mxactions.service ~/.config/systemd/user/mxactions.service
 systemctl --user daemon-reload
 systemctl --user enable --now mxactions.service
-```
-
-Restart after config changes:
-
-```sh
-systemctl --user restart mxactions
 ```
 
 ## Interaction

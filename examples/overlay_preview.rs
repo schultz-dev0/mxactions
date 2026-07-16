@@ -14,12 +14,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let layout = RingLayout::new(4, 120.0);
         tx.send(RingCommand::Show {
             title: "Preview".into(),
-            labels: vec![
-                "Top".into(),
-                "Right".into(),
-                "Bottom".into(),
-                "Left".into(),
-            ],
+            labels: vec!["Top".into(), "Right".into(), "Bottom".into(), "Left".into()],
+            icons: vec![None, None, None, None],
             layout,
             cursor: (960, 540),
         })
