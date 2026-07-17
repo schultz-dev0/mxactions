@@ -47,15 +47,15 @@ impl InputInjector for RecordingInjector {
     }
 }
 
-/// Spawns `ydotool` for key chords and mouse clicks (requires `ydotool` + `ydotoold`).
+/// Spawns `wtype` for key chords (Wayland virtual-keyboard protocol; no daemon
+/// or `/dev/uinput` permissions needed) and `ydotool` for mouse clicks.
 #[derive(Debug, Default)]
-pub struct YdotoolInjector;
+pub struct SystemInjector;
 
-impl InputInjector for YdotoolInjector {
+impl InputInjector for SystemInjector {
     fn key_chord(&mut self, chord: &str) -> Result<(), ActionError> {
-        let key = chord.replace('-', "+");
-        let mut command = std::process::Command::new("ydotool");
-        command.args(["key", &key]);
+        let mut command = std::process::Command::new("wtype");
+        command.args(wtype_args(chord)?);
         spawn_reaped(command)
     }
 
@@ -68,6 +68,53 @@ impl InputInjector for YdotoolInjector {
         let mut command = std::process::Command::new("ydotool");
         command.args(["click", code]);
         spawn_reaped(command)
+    }
+}
+
+/// Turns a `+`-joined chord like `"ctrl+shift+p"` into `wtype` CLI args,
+/// e.g. `["-M", "ctrl", "-M", "shift", "-k", "p"]`.
+fn wtype_args(chord: &str) -> Result<Vec<String>, ActionError> {
+    let mut tokens: Vec<&str> = chord.split('+').map(str::trim).collect();
+    let Some(key) = tokens.pop().filter(|k| !k.is_empty()) else {
+        return Err(ActionError::Empty);
+    };
+    let mut args = Vec::with_capacity(tokens.len() * 2 + 2);
+    for modifier in tokens {
+        args.push("-M".to_string());
+        args.push(wtype_modifier_name(modifier));
+    }
+    args.push("-k".to_string());
+    args.push(wtype_key_name(key).to_string());
+    Ok(args)
+}
+
+/// Maps common modifier aliases to the names `wtype -M` accepts
+/// (`shift`, `capslock`, `ctrl`, `logo`, `win`, `alt`, `altgr`).
+fn wtype_modifier_name(modifier: &str) -> String {
+    match modifier.to_ascii_lowercase().as_str() {
+        "super" | "meta" | "cmd" | "win" | "logo" => "logo".to_string(),
+        "control" => "ctrl".to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// Maps punctuation to the XKB keysym name `wtype -k` expects (libxkbcommon
+/// resolves single letters/digits and named keys like `Return`/`F1` as-is,
+/// but not literal punctuation characters).
+fn wtype_key_name(key: &str) -> &str {
+    match key {
+        "`" => "grave",
+        "-" => "minus",
+        "=" => "equal",
+        "[" => "bracketleft",
+        "]" => "bracketright",
+        "\\" => "backslash",
+        ";" => "semicolon",
+        "'" => "apostrophe",
+        "," => "comma",
+        "." => "period",
+        "/" => "slash",
+        other => other,
     }
 }
 
@@ -163,6 +210,44 @@ mod tests {
     #[test]
     fn rejects_empty_key_chord() {
         assert_eq!(parse_command("key:   "), Err(ActionError::Empty));
+    }
+
+    #[test]
+    fn wtype_args_builds_modifiers_then_key() {
+        assert_eq!(
+            wtype_args("ctrl+shift+p").unwrap(),
+            vec!["-M", "ctrl", "-M", "shift", "-k", "p"]
+        );
+    }
+
+    #[test]
+    fn wtype_args_maps_punctuation_to_xkb_names() {
+        assert_eq!(
+            wtype_args("ctrl+`").unwrap(),
+            vec!["-M", "ctrl", "-k", "grave"]
+        );
+        assert_eq!(
+            wtype_args("ctrl+-").unwrap(),
+            vec!["-M", "ctrl", "-k", "minus"]
+        );
+    }
+
+    #[test]
+    fn wtype_args_maps_super_alias_to_logo() {
+        assert_eq!(
+            wtype_args("super+d").unwrap(),
+            vec!["-M", "logo", "-k", "d"]
+        );
+    }
+
+    #[test]
+    fn wtype_args_with_no_modifiers() {
+        assert_eq!(wtype_args("Escape").unwrap(), vec!["-k", "Escape"]);
+    }
+
+    #[test]
+    fn wtype_args_rejects_empty_chord() {
+        assert_eq!(wtype_args("   "), Err(ActionError::Empty));
     }
 
     #[test]
