@@ -9,7 +9,7 @@ pub mod pointer;
 
 pub use action::{
     Action, ActionError, ActionRunner, ClickButton, InputInjector, RecordingInjector,
-    SystemInjector, parse_command,
+    YdotoolInjector, parse_command,
 };
 pub use config::{
     Config, ConfigError, ConfigReloader, DEFAULT_CONFIG_JSON, Ring, RingAction, TriggerMode,

@@ -12,6 +12,23 @@ Wayland daemon that diverts the Logitech **MX Master 4** Haptic Sense Panel and 
 - `ttf-nerd-fonts-symbols` (Arch) or equivalent Nerd Font package for icon glyphs in bubbles (an action with no `icon` set falls back to the first letter of its label; an `icon` set without the font installed renders as a blank/tofu glyph rather than falling back)
 - udev permissions to open the mouse HID++ interface (see below)
 
+### ydotool setup
+
+`key:` and `click:` actions shell out to `ydotool`, which needs its daemon
+`ydotoold` running (it injects via `/dev/uinput`). Install the package, then
+enable the daemon:
+
+```sh
+sudo pacman -S ydotool          # Arch; use your distro's package otherwise
+systemctl --user enable --now ydotool.service
+```
+
+If the unit isn't shipped by your package, run `ydotoold` from your compositor
+autostart instead. Without the daemon, `key:`/`click:` actions silently do
+nothing (shell actions still work). `wtype` is **not** used: Hyprland does not
+honor the Wayland virtual-keyboard protocol, so ydotool's uinput path is
+required.
+
 ## Solaar / OpenLogi conflict
 
 mxactions **owns** the Sense Panel via HID++ temporary diversion. If **Solaar**, **OpenLogi**, or another tool already diverts the panel, startup fails with a clear error. Quit those tools before running mxactions.

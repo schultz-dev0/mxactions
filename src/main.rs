@@ -2,7 +2,7 @@ use std::sync::mpsc::{self, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use mxactions::action::{ActionRunner, SystemInjector};
+use mxactions::action::{ActionRunner, YdotoolInjector};
 use mxactions::config::{Config, ConfigReloader, TriggerMode, config_path, load_or_init};
 use mxactions::controller::{Controller, ControllerEvent, RingCommand};
 use mxactions::focus::{FocusSource, WaylandFocus};
@@ -57,7 +57,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         ring_center: None,
         cmd_tx,
         runner: ActionRunner {
-            injector: SystemInjector,
+            injector: YdotoolInjector,
         },
     };
     let mut last_pointer: Option<(i32, i32)> = None;
@@ -134,7 +134,7 @@ struct RingSession {
     controller: Controller,
     ring_center: Option<(i32, i32)>,
     cmd_tx: Sender<RingCommand>,
-    runner: ActionRunner<SystemInjector>,
+    runner: ActionRunner<YdotoolInjector>,
 }
 
 impl RingSession {
